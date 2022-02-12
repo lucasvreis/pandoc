@@ -37,11 +37,15 @@ isImageFilename fp = hasImageExtension && (isValid (T.unpack fp) || isKnownProto
 -- the string does not appear to be a link.
 cleanLinkText :: Text -> Maybe Text
 cleanLinkText s
-  | Just _ <- T.stripPrefix "/" s      = Just $ "file://" <> s -- absolute path
-  | Just _ <- T.stripPrefix "./" s     = Just s                -- relative path
-  | Just _ <- T.stripPrefix "../" s    = Just s                -- relative path
+  | "/"   `T.isPrefixOf` s             = Just $ "file://" <> s -- absolute path
+  | "./"  `T.isPrefixOf` s             = Just s                -- relative path
+  | "../" `T.isPrefixOf` s             = Just s                -- relative path
   -- Relative path or URL (file schema)
-  | Just s' <- T.stripPrefix "file:" s = Just $ if "//" `T.isPrefixOf` s' then s else s'
+  | Just s' <- T.stripPrefix "file:" s =
+      if "/" `T.isPrefixOf` s'
+      then Just $ "file:///" <> T.dropWhile (== '/') s' -- absolute path
+      else Just s'                                      -- relative path
+  -- URL
   | otherwise                          = if isUrl s then Just s else Nothing
   where
     isUrl :: Text -> Bool

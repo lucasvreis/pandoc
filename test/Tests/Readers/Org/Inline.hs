@@ -281,6 +281,10 @@ tests =
       "[[file:///etc/passwd][passwd]]" =?>
     para (link "file:///etc/passwd" "" "passwd")
 
+  , "Absolute file link with less slashes" =:
+      "[[file:/etc/passwd][passwd]]" =?>
+    para (link "file:///etc/passwd" "" "passwd")
+
   , "File link" =:
       "[[file:target][title]]" =?>
     para (link "target" "" "title")
