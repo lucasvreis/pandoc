@@ -277,7 +277,53 @@ tests =
                      , "for", "fnords."
                      ])
 
-  , "Absolute file link" =:
+  , "Angle link with many characters" =:
+      "Look at <https://a b c.org/<*$´~]+_2@ẽ\",.> for fnords." =?>
+    para (spcSep [ "Look", "at"
+                     , link "https://a%20b%20c.org/%3C*$\180~%5D+_2@\7869%22,."
+                       "" "https://a b c.org/<*$\180~]+_2@\7869\",."
+                     , "for", "fnords."
+                     ])
+
+  , "Angle link with indented newline inside" =:
+      "Look at <https://a b\n    c.org> for fnords." =?>
+    para (spcSep [ "Look", "at"
+                     , link "https://a%20bc.org"
+                       "" "https://a bc.org"
+                     , "for", "fnords."
+                     ])
+
+  , "Angle links with possibly meaningful characters following newlines" =:
+      "<http://a\n:c><http://a\n-><http://a\n#><http://a\n*>" =?>
+    para (mconcat [ link "http://a:c" "" "http://a:c"
+                  , link "http://a-" "" "http://a-"
+                  , link "http://a#" "" "http://a#"
+                  , link "http://a*" "" "http://a*"
+                  ])
+
+  , "Not an angle link 1" =:
+      "<http://abc\n>" =?>
+    para (mconcat [ "<"
+                  , link "http://abc" "" "http://abc"
+                  , singleton SoftBreak
+                  , ">"
+                  ])
+
+  , "Not an angle link 2" =:
+      "<http://abc\n\nd>" =?>
+    para (mconcat [ "<"
+                  , link "http://abc" "" "http://abc"
+                  ])
+    <> para "d>"
+
+   , "Not an angle link 3" =:
+      "<http://abc\n|>" =?>
+    para (mconcat [ "<"
+                  , link "http://abc" "" "http://abc"
+                  ])
+    <> simpleTable [] [[plain ">"]]
+
+ , "Absolute file link" =:
       "[[file:///etc/passwd][passwd]]" =?>
     para (link "file:///etc/passwd" "" "passwd")
 

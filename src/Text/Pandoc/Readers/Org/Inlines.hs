@@ -38,6 +38,7 @@ import Data.Char (isAlphaNum, isSpace)
 import qualified Data.Map as M
 import Data.Text (Text)
 import qualified Data.Text as T
+import Text.Pandoc.Shared (escapeURI)
 
 --
 -- Functions acting on the parser state
@@ -466,9 +467,17 @@ plainLink = try $ do
 angleLink :: PandocMonad m => OrgParser m (F Inlines)
 angleLink = try $ do
   char '<'
-  link <- plainLink
-  char '>'
-  return link
+  scheme <- uriScheme
+  char ':'
+  str' <- T.pack <$>
+    many1Till (noneOf "\n\r>" <|>
+               (newline
+                *> notFollowedBy' endOfBlock
+                *> many spaceChar
+                *> noneOf "\n\r>"))
+    (char '>')
+  let uri' = scheme <> ":" <> str'
+  returnF $ B.link (escapeURI uri') "" (B.text uri')
 
 linkTarget :: PandocMonad m => OrgParser m Text
 linkTarget = T.pack <$> enclosedByPair1 '[' ']' (noneOf "\n\r[]")

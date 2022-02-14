@@ -46,6 +46,7 @@ module Text.Pandoc.Readers.Org.Parsing
   , enclosed
   , stringAnyCase
   , charsInBalanced
+  , uriScheme
   , uri
   , withRaw
   , readWithM
