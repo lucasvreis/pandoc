@@ -251,9 +251,19 @@ tests =
       "[[][New Link]]" =?>
     para (link "" "" "New Link")
 
-  , "Image link" =:
+  , "Invalid image link" =:
       "[[sunset.png][file:dusk.svg]]" =?>
-    para (link "sunset.png" "" (image "dusk.svg" "" ""))
+    let attr = ("", ["spurious-link"], [("target", "sunset.png")])
+    in para (spanWith attr (emph $ image "dusk.svg" "" ""))
+
+  , "Image link" =:
+      "[[./sunset.png][file:dusk.svg]]" =?>
+    para (link "./sunset.png" "" (image "dusk.svg" "" ""))
+
+  , "Image internal link to anchor" =:
+      "<<anchor>> [[anchor][file:dusk.svg]]" =?>
+    para (spanWith ("anchor", [], []) mempty <>
+           (link "#anchor" "" (image "dusk.svg" "" "")))
 
   , "Image link with non-image target" =:
       "[[http://example.com][./logo.png]]" =?>

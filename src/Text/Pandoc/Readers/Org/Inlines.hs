@@ -38,7 +38,7 @@ import Data.Char (isAlphaNum, isSpace)
 import qualified Data.Map as M
 import Data.Text (Text)
 import qualified Data.Text as T
-import Text.Pandoc.Shared (escapeURI)
+import Text.Pandoc.Shared (escapeURI, inlineListToIdentifier)
 
 --
 -- Functions acting on the parser state
@@ -432,32 +432,62 @@ linkOrImage = explicitOrImageLink
               <|> plainLink
               <?> "link or image"
 
+linkToInlines :: PandocMonad m => Text -> Maybe Text -> OrgParser m (F Inlines)
+linkToInlines target mbDescr = do
+  targetF  <- applyCustomLinkFormat target
+
+  -- Content that may be put inside the link.
+  -- If description is a link to an image file, this image is the content.
+  -- Otherwise, if description exists, parsed description is the content.
+  -- If description does not exist, fall back to the target text as content.
+  contents <- case mbDescr of
+    Just descr
+      | Just imgSrc <- cleanLinkText descr, isImageFilename imgSrc ->
+          returnF $ B.image imgSrc "" mempty
+      | otherwise ->
+          parseFromString (mconcat <$> many inline) descr
+    Nothing -> pure $ B.str <$> targetF
+
+  -- There are 7 types of target
+  case T.uncons target of
+    Nothing -> pure $ B.link mempty "" <$> contents -- Wiki link (empty by convention)
+
+    Just ('*', hTitle) -> do -- Headline inner link
+      hTitleF <- parseFromString (mconcat <$> many inline) hTitle
+      exts    <- getOption readerExtensions
+      return $ do
+        hId   <- inlineListToIdentifier exts . B.toList <$> hTitleF
+        hIds  <- asksF orgStateIdentifiers
+        if hId `elem` hIds
+          then case mbDescr of
+            Nothing -> B.link ("#" <> hId) "" <$> hTitleF -- Use parsed headline as title if link has no description
+            Just _  -> B.link ("#" <> hId) "" <$> contents
+          else spuriousLink target <$> contents
+
+    Just ('#', _) -> pure $ B.link target "" <$> contents -- Anchor link
+
+    _ -> return $ do
+      target' <- targetF;
+      case cleanLinkText target' of
+        Just extTgt ->
+          case mbDescr of
+            Nothing | isImageFilename extTgt -> -- Link has no description and targets image
+                        pure $ B.image extTgt "" ""
+            _ -> B.link extTgt "" <$> contents  -- Link targets file
+        Nothing -> internalLink target' =<< contents -- Internal link or spurious
+
 explicitOrImageLink :: PandocMonad m => OrgParser m (F Inlines)
 explicitOrImageLink = try $ do
   char '['
-  srcF   <- applyCustomLinkFormat =<< possiblyEmptyLinkTarget
+  src <- possiblyEmptyLinkTarget
   descr  <- enclosedRaw (char '[') (char ']')
-  titleF <- parseFromString (mconcat <$> many inline) descr
   char ']'
-  return $ do
-    src <- srcF
-    title <- titleF
-    case cleanLinkText descr of
-      Just imgSrc | isImageFilename imgSrc ->
-        return . B.link src "" $ B.image imgSrc mempty mempty
-      _ ->
-        linkToInlinesF src title
+  linkToInlines src (Just descr)
 
 selflinkOrImage :: PandocMonad m => OrgParser m (F Inlines)
 selflinkOrImage = try $ do
   target <- char '[' *> linkTarget <* char ']'
-  case cleanLinkText target of
-    Nothing        -> case T.uncons target of
-                        Just ('#', _) -> returnF $ B.link target "" (B.str target)
-                        _             -> return $ internalLink target (B.str target)
-    Just nonDocTgt -> if isImageFilename nonDocTgt
-                      then returnF $ B.image nonDocTgt "" ""
-                      else returnF $ B.link nonDocTgt "" (B.str target)
+  linkToInlines target Nothing
 
 plainLink :: PandocMonad m => OrgParser m (F Inlines)
 plainLink = try $ do
@@ -492,24 +522,17 @@ applyCustomLinkFormat link = do
     formatter <- M.lookup linkType <$> asksF orgStateLinkFormatters
     return $ maybe link ($ T.drop 1 rest) formatter
 
--- | Take a link and return a function which produces new inlines when given
--- description inlines.
-linkToInlinesF :: Text -> Inlines -> F Inlines
-linkToInlinesF linkStr =
-  case T.uncons linkStr of
-    Nothing       -> pure . B.link mempty ""       -- wiki link (empty by convention)
-    Just ('#', _) -> pure . B.link linkStr ""      -- document-local fraction
-    _             -> case cleanLinkText linkStr of
-      Just extTgt -> return . B.link extTgt ""
-      Nothing     -> internalLink linkStr  -- other internal link
-
 internalLink :: Text -> Inlines -> F Inlines
 internalLink link title = do
   ids <- asksF orgStateAnchorIds
-  if link `elem` ids
-    then return $ B.link ("#" <> link) "" title
-    else let attr' = ("", ["spurious-link"] , [("target", link)])
-         in return $ B.spanWith attr' (B.emph title)
+  return $ if link `elem` ids
+           then B.link ("#" <> link) "" title
+           else spuriousLink link title
+
+spuriousLink :: Text -> Inlines -> Inlines
+spuriousLink link =
+  let attr' = ("", ["spurious-link"] , [("target", link)])
+  in B.spanWith attr' . B.emph
 
 -- | Parse an anchor like @<<anchor-id>>@ and return an empty span with
 -- @anchor-id@ set as id.  Legal anchors in org-mode are defined through
